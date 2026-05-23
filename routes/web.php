@@ -29,12 +29,17 @@ Route::middleware('auth')->group(function () {
     // Proses Logout Custom
     Route::post('/logout', [AuthController::class, 'logout'])->name('logout');
     
-    // Halaman Dashboard Utama Sementara (Target Ringkasan Statistik)
+    // Halaman Dashboard Utama Sementara
     Route::get('/dashboard', function () {
         return '
             <div style="font-family: sans-serif; padding: 40px; text-align: center;">
                 <h1 style="color: #4f46e5;">Sukses Menembus Dashboard, Bro Beryl!</h1>
-                <p>Custom Authentication berlapis (Action & Repository Pattern) lu berjalan 100% aman dan sinkron.</p>
+                <p>Custom Authentication & Workspace Pattern lu berjalan 100% aman.</p>
+                <div style="margin: 20px 0;">
+                    <a href="'.route('teams.create').'" style="background-color: #4f46e5; color: white; text-decoration: none; padding: 10px 20px; border-radius: 8px; font-weight: bold; margin-right: 10px;">
+                        + Buat Workspace Baru
+                    </a>
+                </div>
                 <hr style="margin: 20px auto; max-width: 400px; border-color: #e2e8f0;">
                 <form action="'.route('logout').'" method="POST">
                     '.csrf_field().'
@@ -46,12 +51,12 @@ Route::middleware('auth')->group(function () {
         ';
     })->name('dashboard');
 
-    // Rute Profile bawaan yang bisa lu simpan/pakai nanti jika butuh
+    // --- TAMBAHKAN DUA BARIS RUTE WORKSPACE INI, BRO ---
+    Route::get('/teams/create', [\App\Http\Controllers\Team\TeamController::class, 'create'])->name('teams.create');
+    Route::post('/teams', [\App\Http\Controllers\Team\TeamController::class, 'store'])->name('teams.store');
+
+    // Rute Profile bawaan
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
 });
-
-// KONTROL PENTING: Kita matikan / comment rute bawaan Breeze asli 
-// supaya flow aplikasi murni lewat Custom Code yang lu pahami sendiri.
-// require __DIR__.'/auth.php';
