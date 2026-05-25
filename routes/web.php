@@ -8,10 +8,6 @@ use Illuminate\Support\Facades\Route;
 Route::get('/', function () {
     return view('welcome');
 });
-
-// ============================================================================
-// CUSTOM GUEST ROUTES: Untuk pengunjung yang BELUM LOGIN (Menggunakan Custom Auth Kita)
-// ============================================================================
 Route::middleware('guest')->group(function () {
     // Halaman & Proses Login Custom
     Route::get('/login', [AuthController::class, 'showLogin'])->name('login');
@@ -22,38 +18,81 @@ Route::middleware('guest')->group(function () {
     Route::post('/register', [AuthController::class, 'register'])->name('register.store');
 });
 
-// ============================================================================
-// CUSTOM AUTH ROUTES: Untuk user yang SUDAH LOGIN
-// ============================================================================
 Route::middleware('auth')->group(function () {
     // Proses Logout Custom
     Route::post('/logout', [AuthController::class, 'logout'])->name('logout');
     
-    // Halaman Dashboard Utama Sementara
-    Route::get('/dashboard', function () {
-        return '
-            <div style="font-family: sans-serif; padding: 40px; text-align: center;">
-                <h1 style="color: #4f46e5;">Sukses Menembus Dashboard, Bro Beryl!</h1>
-                <p>Custom Authentication & Workspace Pattern lu berjalan 100% aman.</p>
-                <div style="margin: 20px 0;">
-                    <a href="'.route('teams.create').'" style="background-color: #4f46e5; color: white; text-decoration: none; padding: 10px 20px; border-radius: 8px; font-weight: bold; margin-right: 10px;">
-                        + Buat Workspace Baru
-                    </a>
-                </div>
-                <hr style="margin: 20px auto; max-width: 400px; border-color: #e2e8f0;">
-                <form action="'.route('logout').'" method="POST">
-                    '.csrf_field().'
-                    <button type="submit" style="background-color: #ef4444; color: white; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; font-weight: bold;">
-                        Logout Keluar Akun
-                    </button>
-                </form>
-            </div>
-        ';
-    })->name('dashboard');
 
-    // --- TAMBAHKAN DUA BARIS RUTE WORKSPACE INI, BRO ---
+// Halaman Dashboard Utama (Mengambil semua workspace milik user)
+// Halaman Dashboard Utama (Menampilkan Form + Daftar Tugas Aktif)
+Route::get('/dashboard', function (\Illuminate\Http\Request $request) {
+    $user = auth()->user();
+    
+    // 1. Ambil semua workspace tempat user ini bergabung
+    $teams = \Illuminate\Support\Facades\DB::table('team_members')
+        ->join('teams', 'team_members.team_id', '=', 'teams.id')
+        ->where('team_members.user_id', $user->id)
+        ->select('teams.*', 'team_members.role')
+        ->get();
+
+    // 2. Tentukan workspace mana yang sedang aktif dilihat (diambil dari parameter URL ?team_id=xxx)
+    // Jika tidak ada parameter di URL, default pakai workspace pertama
+    $selectedTeamId = $request->query('team_id', $teams->first()?->id);
+
+    $currentTeam = null;
+    $tasks = collect();
+    $teamMembers = collect();
+
+    if ($selectedTeamId) {
+        // Ambil detail workspace yang sedang dipilih
+        $currentTeam = $teams->where('id', $selectedTeamId)->first();
+
+        if ($currentTeam) {
+            // Ambil daftar tugas di workspace ini lewat Task Repository kita
+            $taskRepo = app(\App\Repositories\Contracts\TaskRepositoryInterface::class);
+            $tasks = $taskRepo->getFiltered($currentTeam->id, []);
+
+            // Ambil daftar anggota tim untuk dropdown Assignee
+            $teamMembers = \Illuminate\Support\Facades\DB::table('team_members')
+                ->join('users', 'team_members.user_id', '=', 'users.id')
+                ->where('team_members.team_id', $currentTeam->id)
+                ->select('users.id', 'users.name', 'users.email')
+                ->get();
+        }
+    }
+
+    return view('dashboard', compact('teams', 'currentTeam', 'tasks', 'teamMembers'));
+})->name('dashboard');
+
+// RUTE API BARU: Untuk mengambil data anggota tim secara dinamis lewat JavaScript
+Route::get('/api/teams/{teamId}/members', function ($teamId) {
+    // Pastikan user yang ngakses emang anggota di tim itu biar aman
+    $isMember = \Illuminate\Support\Facades\DB::table('team_members')
+        ->where('team_id', $teamId)
+        ->where('user_id', auth()->id())
+        ->exists();
+
+    if (!$isMember) {
+        return response()->json(['error' => 'Unauthorized'], 403);
+    }
+
+    $members = \Illuminate\Support\Facades\DB::table('team_members')
+        ->join('users', 'team_members.user_id', '=', 'users.id')
+        ->where('team_members.team_id', $teamId)
+        ->select('users.id', 'users.name', 'users.email')
+        ->get();
+
+    return response()->json($members);
+})->name('api.teams.members');
+
+    //Team Management (Minggu 1)
     Route::get('/teams/create', [\App\Http\Controllers\Team\TeamController::class, 'create'])->name('teams.create');
     Route::post('/teams', [\App\Http\Controllers\Team\TeamController::class, 'store'])->name('teams.store');
+    //Task
+    Route::post('/tasks', [\App\Http\Controllers\Task\TaskController::class, 'store'])->name('tasks.store');
+    Route::patch('/tasks/{id}/status', [\App\Http\Controllers\Task\TaskController::class, 'updateStatus'])->name('tasks.updateStatus');
+    Route::delete('/tasks/{id}', [\App\Http\Controllers\Task\TaskController::class, 'destroy'])->name('tasks.destroy');
+    // ============================================================================
 
     // Rute Profile bawaan
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
